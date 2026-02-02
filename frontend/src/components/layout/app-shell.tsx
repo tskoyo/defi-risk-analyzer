@@ -1,5 +1,5 @@
 import * as React from "react";
-import { Button } from "@/components/ui/button";
+import { ConnectButton } from "@/components/connect-button";
 import { ThemeSwitch } from "@/components/theme-switch";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -11,9 +11,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
                     <div className="flex items-center gap-4">
                         <ThemeSwitch />
-                        <Button size="sm" variant="secondary" disabled>
-                            Connect Wallet
-                        </Button>
+                        <ConnectButton />
                     </div>
                 </div>
             </header>

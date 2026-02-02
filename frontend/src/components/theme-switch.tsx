@@ -23,6 +23,7 @@ export function ThemeSwitch() {
         checked={isDark}
         onCheckedChange={(checked) => setTheme(checked ? "dark" : "light")}
         aria-label="Toggle theme"
+        className="cursor-pointer"
       />
     </div>
   );
