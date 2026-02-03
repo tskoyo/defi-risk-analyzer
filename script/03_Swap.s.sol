@@ -29,7 +29,7 @@ contract SwapScript is BaseScript {
             zeroForOne: true,
             poolKey: poolKey,
             hookData: hookData,
-            receiver: address(this),
+            receiver: msg.sender,
             deadline: block.timestamp + 30
         });
 

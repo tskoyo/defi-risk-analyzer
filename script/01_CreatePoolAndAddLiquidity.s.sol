@@ -5,10 +5,10 @@ import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {CurrencyLibrary, Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol";
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
-
 import {BaseScript} from "./base/BaseScript.sol";
 import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {LiquidityHelpers} from "./base/LiquidityHelpers.sol";
+import {PoolId} from "@uniswap/v4-core/src/types/PoolId.sol";
 
 contract CreatePoolAndAddLiquidityScript is BaseScript, LiquidityHelpers {
     using CurrencyLibrary for Currency;
