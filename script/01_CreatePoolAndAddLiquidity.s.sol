@@ -7,6 +7,7 @@ import {LiquidityAmounts} from "@uniswap/v4-core/test/utils/LiquidityAmounts.sol
 import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 
 import {BaseScript} from "./base/BaseScript.sol";
+import {IHooks} from "@uniswap/v4-core/src/interfaces/IHooks.sol";
 import {LiquidityHelpers} from "./base/LiquidityHelpers.sol";
 
 contract CreatePoolAndAddLiquidityScript is BaseScript, LiquidityHelpers {
@@ -31,11 +32,7 @@ contract CreatePoolAndAddLiquidityScript is BaseScript, LiquidityHelpers {
 
     function run() external {
         PoolKey memory poolKey = PoolKey({
-            currency0: currency0,
-            currency1: currency1,
-            fee: lpFee,
-            tickSpacing: tickSpacing,
-            hooks: hookContract
+            currency0: currency0, currency1: currency1, fee: lpFee, tickSpacing: tickSpacing, hooks: hookContract
         });
 
         bytes memory hookData = new bytes(0);
