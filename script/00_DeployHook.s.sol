@@ -6,10 +6,9 @@ import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 
 import {BaseScript} from "./base/BaseScript.sol";
 
-// import {Counter} from "../src/Counter.sol";
 import {LiquidityDepthRiskHook} from "../src/LiquidityDepthRiskHook.sol";
 
-/// @notice Mines the address and deploys the Counter.sol Hook contract
+/// @notice Mines the address and deploys the LiquidityDepthRiskHook.sol Hook contract
 contract DeployHookScript is BaseScript {
     function run() public {
         // hook contracts must have specific flags encoded in the address
@@ -25,9 +24,9 @@ contract DeployHookScript is BaseScript {
 
         // Deploy the hook using CREATE2
         vm.startBroadcast();
-        LiquidityDepthRiskHook counter = new LiquidityDepthRiskHook{salt: salt}(poolManager);
+        LiquidityDepthRiskHook liquidityDepthRiskHook = new LiquidityDepthRiskHook{salt: salt}(poolManager);
         vm.stopBroadcast();
 
-        require(address(counter) == hookAddress, "DeployHookScript: Hook Address Mismatch");
+        require(address(liquidityDepthRiskHook) == hookAddress, "DeployHookScript: Hook Address Mismatch");
     }
 }
