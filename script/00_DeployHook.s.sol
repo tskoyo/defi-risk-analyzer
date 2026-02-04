@@ -13,7 +13,10 @@ import {console} from "forge-std/console.sol";
 
 contract DeployHookScript is Script {
     // Base Mainnet PoolManager
-    address constant POOLMANAGER = 0x498581fF718922c3f8e6A244956aF099B2652b2b;
+    // address constant POOLMANAGER = 0x498581fF718922c3f8e6A244956aF099B2652b2b;
+
+    // Base Sepolia PoolManager
+    address constant POOLMANAGER = 0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408;
 
     function run() external {
         uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG);

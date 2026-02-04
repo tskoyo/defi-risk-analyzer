@@ -22,9 +22,17 @@ contract BaseScript is Script, Deployers {
     /////////////////////////////////////
     // --- Configure These ---
     /////////////////////////////////////
-    IERC20 internal constant token0 = IERC20(0x6e50537f918fF132E4147a8d464ddb37FC7DAb5E);
-    IERC20 internal constant token1 = IERC20(0x061C999459a6ABc44CF976a67C96ef126810Ad9D);
-    IHooks constant hookContract = IHooks(address(0x02ebe5dBEcC20177755Bd955268ADB95ff274080));
+    // IERC20 internal constant token0 = IERC20(0x6e50537f918fF132E4147a8d464ddb37FC7DAb5E); // Base mainnet
+    // IERC20 internal constant token1 = IERC20(0x061C999459a6ABc44CF976a67C96ef126810Ad9D); // Base mainnet
+
+    IERC20 internal constant token0 = IERC20(0xa635C785bEB9B40041a87A0650F9af52A07A595f); // Base sepolia
+    IERC20 internal constant token1 = IERC20(0xEa4aF23bE6Cba93aA3d1862c9Ffb172c1cddC66e); // Base sepolia
+
+    // Deployed Hook contract on Base mainnet
+    // IHooks constant hookContract = IHooks(address(0x02ebe5dBEcC20177755Bd955268ADB95ff274080));
+
+    // Deployed Hook contract on Base sepolia
+    IHooks constant hookContract = IHooks(address(0x224CB5eD9A5e96816BafC0e99D96575bD2214080));
     /////////////////////////////////////
 
     Currency immutable currency0;
