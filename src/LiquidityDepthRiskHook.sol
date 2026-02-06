@@ -15,21 +15,31 @@ contract LiquidityDepthRiskHook is BaseHook {
     using StateLibrary for IPoolManager;
 
     uint256 public constant LIQUIDITY_RISK_THRESHOLD = 1000e18;
+
+    // LVR Protection Constants
+    int24 public constant TICK_DIVERGENCE_THRESHOLD = 50; // ~0.5% divergence triggers protection
     uint24 public constant BASE_FEE = 3000; // 0.30%
-    uint24 public constant PANIC_FEE = 50000; // 5.00%
+    uint24 public constant PANIC_FEE = 50000; // 5.00% (Capture the Arb)
+
+    struct Observation {
+        uint32 timestamp;
+        int56 tickCumulative;
+    }
+
+    mapping(PoolId => Observation) public observations;
 
     constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 
     function getHookPermissions() public pure override returns (Hooks.Permissions memory) {
         return Hooks.Permissions({
             beforeInitialize: false,
-            afterInitialize: false,
+            afterInitialize: true,
             beforeAddLiquidity: false,
             afterAddLiquidity: false,
             beforeRemoveLiquidity: false,
             afterRemoveLiquidity: false,
             beforeSwap: true,
-            afterSwap: false,
+            afterSwap: true,
             beforeDonate: false,
             afterDonate: false,
             beforeSwapReturnDelta: false,
@@ -39,6 +49,11 @@ contract LiquidityDepthRiskHook is BaseHook {
         });
     }
 
+    function _afterInitialize(address, PoolKey calldata key, uint160, int24 tick) internal override returns (bytes4) {
+        observations[key.toId()] = Observation({timestamp: uint32(block.timestamp), tickCumulative: 0});
+        return BaseHook.afterInitialize.selector;
+    }
+
     function _beforeSwap(address, PoolKey calldata key, SwapParams calldata, bytes calldata)
         internal
         view
@@ -46,12 +61,46 @@ contract LiquidityDepthRiskHook is BaseHook {
         returns (bytes4, BeforeSwapDelta, uint24)
     {
         // Now this works because we are using StateLibrary
-        uint128 currentLiquidity = poolManager.getLiquidity(key.toId());
+        PoolId poolId = key.toId();
+        (, int24 currentTick,,) = poolManager.getSlot0(poolId);
+        Observation memory last = observations[poolId];
 
-        uint24 feeToCharge = currentLiquidity < LIQUIDITY_RISK_THRESHOLD ? PANIC_FEE : BASE_FEE;
+        uint24 feeToCharge = BASE_FEE;
+        uint32 timeDelta = uint32(block.timestamp) - last.timestamp;
 
-        uint24 feeOverride = feeToCharge | LPFeeLibrary.OVERRIDE_FEE_FLAG;
+        if (timeDelta > 0) {
+            int24 historicalTick = int24(last.tickCumulative / int56(int32(timeDelta)));
+            int24 divergence =
+                currentTick > historicalTick ? currentTick - historicalTick : historicalTick - currentTick;
 
-        return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, feeOverride);
+            if (divergence > TICK_DIVERGENCE_THRESHOLD) {
+                feeToCharge = PANIC_FEE;
+            }
+        }
+
+        return
+            (
+                BaseHook.beforeSwap.selector,
+                BeforeSwapDeltaLibrary.ZERO_DELTA,
+                feeToCharge | LPFeeLibrary.OVERRIDE_FEE_FLAG
+            );
+    }
+
+    function _afterSwap(address, PoolKey calldata key, SwapParams calldata, BalanceDelta, bytes calldata)
+        internal
+        override
+        returns (bytes4, int128)
+    {
+        PoolId poolId = key.toId();
+        (, int24 tick,,) = poolManager.getSlot0(poolId);
+        Observation storage last = observations[poolId];
+        uint32 now32 = uint32(block.timestamp);
+
+        if (now32 > last.timestamp) {
+            last.tickCumulative += int56(tick) * int32(now32 - last.timestamp);
+            last.timestamp = now32;
+        }
+
+        return (BaseHook.afterSwap.selector, 0);
     }
 }
