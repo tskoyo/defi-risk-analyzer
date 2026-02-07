@@ -17,7 +17,6 @@ contract LiquidityDepthRiskHookTest is BaseTest {
     Currency currency1;
     LiquidityDepthRiskHook hook;
     PoolKey poolKey;
-    address hookAddress;
 
     function setUp() public {
         // 1. Initialize v4 protocol artifacts
@@ -46,6 +45,19 @@ contract LiquidityDepthRiskHookTest is BaseTest {
         // Small swap should use BASE_FEE
         swapRouter.swapExactTokensForTokens({
             amountIn: 1 ether, // Under RETAIL_THRESHOLD
+            amountOutMin: 0,
+            zeroForOne: true,
+            poolKey: poolKey,
+            hookData: "",
+            receiver: address(this),
+            deadline: block.timestamp
+        });
+    }
+
+    function test_arbitrageSwapFlow() public {
+        // Large swap should trigger increased fee logic in the hook
+        swapRouter.swapExactTokensForTokens({
+            amountIn: 100 ether, // Over RETAIL_THRESHOLD
             amountOutMin: 0,
             zeroForOne: true,
             poolKey: poolKey,

@@ -37,7 +37,7 @@ contract AddLiquidityScript is BaseScript, LiquidityHelpers {
             currency1: currency1,
             fee: lpFee,
             tickSpacing: tickSpacing,
-            hooks: hookContract
+            hooks: activeNetworkConfig.hookAddress
         });
         bytes memory hookData = new bytes(0);
 

@@ -12,15 +12,15 @@ contract SwapScript is BaseScript {
             currency1: currency1,
             fee: 3000,
             tickSpacing: 60,
-            hooks: hookContract // This must match the pool
+            hooks: activeNetworkConfig.hookAddress
         });
         bytes memory hookData = new bytes(0);
 
         vm.startBroadcast();
 
         // We'll approve both, just for testing.
-        token1.approve(address(swapRouter), type(uint256).max);
-        token0.approve(address(swapRouter), type(uint256).max);
+        activeNetworkConfig.token1.approve(address(swapRouter), type(uint256).max);
+        activeNetworkConfig.token0.approve(address(swapRouter), type(uint256).max);
 
         // Execute swap
         swapRouter.swapExactTokensForTokens({
