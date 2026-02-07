@@ -11,7 +11,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
 import { usePoolState } from "@/hooks/usePoolState";
 import {
-  LIQUIDITY_RISK_THRESHOLD, BASE_FEE, PANIC_FEE,
+  LIQUIDITY_RISK_THRESHOLD, TRADE_RISK_AMOUNT_THRESHOLD, BASE_FEE, PANIC_FEE,
   POOL_KEY, SWAP_ROUTER_ADDRESS, SWAP_ROUTER_ABI, HOOK_ABI,
   ERC20_ABI, TOKEN0_ADDRESS, TOKEN1_ADDRESS
 } from "@/config/contracts";
@@ -61,7 +61,7 @@ export default function Page() {
     return Number.isFinite(n) && n > 0;
   }, [amount]);
 
-  const amountBigInt = amount ? parseEther(amount) : BigInt(0);
+  const amountBigInt = isAmountValid ? parseEther(amount) : BigInt(0);
   const currentAllowance = allowance ?? BigInt(0);
   const needsApprove = isAmountValid && (currentAllowance < amountBigInt);
 
@@ -129,15 +129,41 @@ export default function Page() {
   }, [writeError]);
 
   const runSimulation = () => {
-    if (liquidity === null) return;
-    const isRisky = liquidity < LIQUIDITY_RISK_THRESHOLD;
+    if (typeof liquidity !== "bigint") {
+      toast.error("Pool state not loaded yet");
+      return;
+    }
+    if (!isAmountValid) {
+      toast.error("Enter a valid amount");
+      return;
+    }
+
+    let amountIn: bigint;
+    try {
+      amountIn = parseEther(amount);
+    } catch {
+      toast.error("Invalid amount format");
+      return;
+    }
+
+    const lowLiquidity = liquidity < LIQUIDITY_RISK_THRESHOLD;
+    const bigTrade = amountIn >= TRADE_RISK_AMOUNT_THRESHOLD;
+
+    const isRisky = lowLiquidity || bigTrade;
     setSimRisk({
       isPanic: isRisky,
       fee: isRisky ? PANIC_FEE : BASE_FEE
     });
 
-    if (isRisky) toast.warning("High Risk Preview", { description: "Pool liquidity is critically low." });
-    else toast.success("Safe Preview", { description: "Liquidity is sufficient." });
+    if (isRisky) {
+      const reasons = [
+        lowLiquidity ? "Pool liquidity is critically low." : null,
+        bigTrade ? "Trade size is large for this demo threshold." : null,
+      ].filter(Boolean).join(" ");
+      toast.warning("High Risk Preview", { description: reasons });
+    } else {
+      toast.success("Safe Preview", { description: "Liquidity is sufficient." });
+    }
   };
 
   const onApprove = () => {
@@ -264,18 +290,18 @@ export default function Page() {
             <CardContent className="grid gap-3 text-sm">
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Current Tick</span>
-                <span className="font-mono">{tick !== null ? tick : "—"}</span>
+                <span className="font-mono">{tick !== null ? tick.toLocaleString() : "—"}</span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Liquidity Depth</span>
                 <span className="font-mono">
-                  {liquidity !== null ? formatEther(liquidity) : "—"} L
+                  {liquidity !== null ? `${formatEther(liquidity)} L` : "—"}
                 </span>
               </div>
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Threshold</span>
                 <span className="font-mono text-muted-foreground">
-                  {formatEther(LIQUIDITY_RISK_THRESHOLD)} L
+                  {`${formatEther(LIQUIDITY_RISK_THRESHOLD)} L`}
                 </span>
               </div>
             </CardContent>

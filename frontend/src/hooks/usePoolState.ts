@@ -1,24 +1,24 @@
 import { useReadContracts } from "wagmi";
 import {
-  POOL_MANAGER_ADDRESS,
-  POOL_MANAGER_ABI,
-  POOL_KEY,
+  STATE_VIEW_ADDRESS,
+  STATE_VIEW_ABI,
+  POOL_ID,
 } from "@/config/contracts";
 
 export function usePoolState() {
   const result = useReadContracts({
     contracts: [
       {
-        address: POOL_MANAGER_ADDRESS,
-        abi: POOL_MANAGER_ABI,
+        address: STATE_VIEW_ADDRESS,
+        abi: STATE_VIEW_ABI,
         functionName: "getSlot0",
-        args: [POOL_KEY],
+        args: [POOL_ID],
       },
       {
-        address: POOL_MANAGER_ADDRESS,
-        abi: POOL_MANAGER_ABI,
+        address: STATE_VIEW_ADDRESS,
+        abi: STATE_VIEW_ABI,
         functionName: "getLiquidity",
-        args: [POOL_KEY],
+        args: [POOL_ID],
       },
     ],
     query: {
@@ -26,18 +26,18 @@ export function usePoolState() {
     },
   });
 
-  const slot0 = result.data?.[0].result as
+  const slot0 = result.data?.[0]?.result as
     | [bigint, number, number, number]
     | undefined;
 
-  const liquidity = result.data?.[1].result as bigint | undefined;
+  const liquidity = result.data?.[1]?.result as bigint | undefined;
 
   return {
     isLoading: result.isLoading,
     isError: result.isError,
     tick: slot0 ? Number(slot0[1]) : null,
     sqrtPriceX96: slot0 ? slot0[0].toString() : null,
-    liquidity: liquidity ? liquidity : null,
+    liquidity: liquidity ?? null,
     refetch: result.refetch,
   };
 }
