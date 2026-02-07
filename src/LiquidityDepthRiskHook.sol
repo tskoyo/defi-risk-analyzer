@@ -9,23 +9,22 @@ import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/types/BeforeSwapDelta.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
-
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
 
 contract LiquidityDepthRiskHook is BaseHook {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
 
-    uint256 public constant LIQUIDITY_RISK_THRESHOLD = 1000e18;
-
-    // LVR Protection Constants
-    int24 public constant TICK_DIVERGENCE_THRESHOLD = 20; // ~0.5% divergence triggers protection
+    // --- Configuration ---
     uint24 public constant BASE_FEE = 3000; // 0.30%
-    uint24 public constant PANIC_FEE = 50000; // 5.00% (Capture the Arb)
+    int24 public constant TICK_DIVERGENCE_LIMIT = 10; // ~0.1% before scaling kicks in
+
+    // threshold: Swaps smaller than 10 tokens (adj. decimals) are "Retail"
+    uint256 public constant RETAIL_THRESHOLD = 10 ether;
 
     struct Observation {
         uint32 timestamp;
-        int56 tickCumulative;
+        int24 lastTick;
     }
 
     mapping(PoolId => Observation) public observations;
@@ -52,32 +51,43 @@ contract LiquidityDepthRiskHook is BaseHook {
     }
 
     function _afterInitialize(address, PoolKey calldata key, uint160, int24 tick) internal override returns (bytes4) {
-        observations[key.toId()] = Observation({timestamp: uint32(block.timestamp), tickCumulative: 0});
+        if (!LPFeeLibrary.isDynamicFee(key.fee)) revert("Pool must be dynamic fee");
+        observations[key.toId()] = Observation({timestamp: uint32(block.timestamp), lastTick: tick});
         return BaseHook.afterInitialize.selector;
     }
 
-    function _beforeSwap(address, PoolKey calldata key, SwapParams calldata, bytes calldata)
+    function _beforeSwap(address, PoolKey calldata key, SwapParams calldata params, bytes calldata)
         internal
         view
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        // Now this works because we are using StateLibrary
+        // 1. Check if retail
+        // amountSpecified is negative for exact-input (selling to pool)
+        uint256 absAmount =
+            params.amountSpecified < 0 ? uint256(-params.amountSpecified) : uint256(params.amountSpecified);
+        if (absAmount < RETAIL_THRESHOLD) {
+            return (
+                BaseHook.beforeSwap.selector,
+                BeforeSwapDeltaLibrary.ZERO_DELTA,
+                BASE_FEE | LPFeeLibrary.OVERRIDE_FEE_FLAG
+            );
+        }
+
         PoolId poolId = key.toId();
-        (, int24 currentTick,,) = poolManager.getSlot0(poolId);
         Observation memory last = observations[poolId];
+        (, int24 currentTick,,) = poolManager.getSlot0(poolId);
+
+        int24 divergence = currentTick > last.lastTick ? currentTick - last.lastTick : last.lastTick - currentTick;
 
         uint24 feeToCharge = BASE_FEE;
-        uint32 timeDelta = uint32(block.timestamp) - last.timestamp;
+        if (divergence > TICK_DIVERGENCE_LIMIT) {
+            // SCALE THE FEE: 1 tick is roughly 1 basis point (0.01%)
+            // If price moves 15% (1500 ticks), we want a ~15% fee to stop arb profit.
+            feeToCharge = uint24(divergence * 10); // 1 tick = 10 pips (0.10%)
 
-        if (timeDelta > 0) {
-            int24 historicalTick = int24(last.tickCumulative / int56(int32(timeDelta)));
-            int24 divergence =
-                currentTick > historicalTick ? currentTick - historicalTick : historicalTick - currentTick;
-
-            if (divergence > TICK_DIVERGENCE_THRESHOLD) {
-                feeToCharge = PANIC_FEE;
-            }
+            // Cap the fee at 90% to avoid total pool lockout
+            if (feeToCharge > 900000) feeToCharge = 900000;
         }
 
         return
@@ -95,14 +105,7 @@ contract LiquidityDepthRiskHook is BaseHook {
     {
         PoolId poolId = key.toId();
         (, int24 tick,,) = poolManager.getSlot0(poolId);
-        Observation storage last = observations[poolId];
-        uint32 now32 = uint32(block.timestamp);
-
-        if (now32 > last.timestamp) {
-            last.tickCumulative += int56(tick) * int32(now32 - last.timestamp);
-            last.timestamp = now32;
-        }
-
+        observations[poolId] = Observation({timestamp: uint32(block.timestamp), lastTick: tick});
         return (BaseHook.afterSwap.selector, 0);
     }
 }

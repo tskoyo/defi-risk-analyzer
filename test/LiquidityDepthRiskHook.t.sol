@@ -1,70 +1,57 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.26;
 
+import {BaseTest} from "./utils/BaseTest.sol";
 import {Test} from "forge-std/Test.sol";
-import {Deployers} from "@uniswap/v4-core/test/utils/Deployers.sol";
+import {Deployers} from "./utils/Deployers.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
-import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
-import {IPoolManager, ModifyLiquidityParams} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
-import {Currency, CurrencyLibrary} from "@uniswap/v4-core/src/types/Currency.sol";
-import {Constants} from "@uniswap/v4-core/test/utils/Constants.sol";
-import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
+import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
-
+import {Constants} from "@uniswap/v4-core/test/utils/Constants.sol";
 import {LiquidityDepthRiskHook} from "../src/LiquidityDepthRiskHook.sol";
 
-contract LiquidityDepthRiskHookTest is Test, Deployers {
-    using PoolIdLibrary for PoolKey;
-    using CurrencyLibrary for Currency;
+import {Hooks} from "@uniswap/v4-core/src/libraries/Hooks.sol";
 
+contract LiquidityDepthRiskHookTest is BaseTest {
+    Currency currency0;
+    Currency currency1;
     LiquidityDepthRiskHook hook;
-    PoolId poolId;
+    PoolKey poolKey;
+    address hookAddress;
 
     function setUp() public {
-        deployFreshManagerAndRouters();
+        // 1. Initialize v4 protocol artifacts
+        deployArtifactsAndLabel();
+        (currency0, currency1) = deployCurrencyPair();
 
-        uint160 flags = uint160(Hooks.BEFORE_SWAP_FLAG);
-        address hookAddress = address(flags);
+        // 2. Define the flags based on your hook's getHookPermissions()
+        // Your hook uses: afterInitialize, beforeSwap, and afterSwap
+        uint160 flags = uint160(Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG);
 
-        deployCodeTo("LiquidityDepthRiskHook.sol", abi.encode(manager), hookAddress);
+        // 3. Deploy the hook code to that specific address
+        // Note: The template usually namespaces the hook to avoid collisions
+        address hookAddress = address(flags ^ (0x4444 << 144));
+        deployCodeTo("LiquidityDepthRiskHook.sol:LiquidityDepthRiskHook", abi.encode(poolManager), hookAddress);
         hook = LiquidityDepthRiskHook(hookAddress);
 
-        (currency0, currency1) = deployMintAndApprove2Currencies();
+        // 4. Initialize the pool
+        poolKey = PoolKey({
+            currency0: currency0, currency1: currency1, fee: LPFeeLibrary.DYNAMIC_FEE_FLAG, tickSpacing: 60, hooks: hook
+        });
 
-        key = PoolKey(currency0, currency1, LPFeeLibrary.DYNAMIC_FEE_FLAG, 60, hook);
-        poolId = key.toId();
-
-        manager.initialize(key, Constants.SQRT_PRICE_1_1);
+        poolManager.initialize(poolKey, Constants.SQRT_PRICE_1_1);
     }
 
-    function test_FeeIsLowWhenLiquidityIsHigh() public {
-        modifyLiquidityRouter.modifyLiquidity(
-            key,
-            ModifyLiquidityParams({tickLower: -60, tickUpper: 60, liquidityDelta: 2000e18, salt: bytes32(0)}),
-            Constants.ZERO_BYTES
-        );
-
-        uint256 amountIn = 1e18;
-        uint256 balanceBefore = currency0.balanceOf(address(this));
-
-        swap(key, true, -int256(amountIn), Constants.ZERO_BYTES);
-
-        uint256 balanceAfter = currency0.balanceOf(address(this));
-        uint256 paid = balanceBefore - balanceAfter;
-
-        assertGt(paid, 0);
-    }
-
-    function test_FeeSurgesWhenLiquidityIsLow() public {
-        modifyLiquidityRouter.modifyLiquidity(
-            key,
-            ModifyLiquidityParams({tickLower: -60, tickUpper: 60, liquidityDelta: 500e18, salt: bytes32(0)}),
-            Constants.ZERO_BYTES
-        );
-
-        uint256 amountIn = 1e18;
-
-        swap(key, true, -int256(amountIn), Constants.ZERO_BYTES);
+    function test_retailSwapFlow() public {
+        // Small swap should use BASE_FEE
+        swapRouter.swapExactTokensForTokens({
+            amountIn: 1 ether, // Under RETAIL_THRESHOLD
+            amountOutMin: 0,
+            zeroForOne: true,
+            poolKey: poolKey,
+            hookData: "",
+            receiver: address(this),
+            deadline: block.timestamp
+        });
     }
 }
