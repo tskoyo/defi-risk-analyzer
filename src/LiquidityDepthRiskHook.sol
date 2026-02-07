@@ -10,6 +10,8 @@ import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/type
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 
+import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+
 contract LiquidityDepthRiskHook is BaseHook {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
@@ -17,7 +19,7 @@ contract LiquidityDepthRiskHook is BaseHook {
     uint256 public constant LIQUIDITY_RISK_THRESHOLD = 1000e18;
 
     // LVR Protection Constants
-    int24 public constant TICK_DIVERGENCE_THRESHOLD = 50; // ~0.5% divergence triggers protection
+    int24 public constant TICK_DIVERGENCE_THRESHOLD = 20; // ~0.5% divergence triggers protection
     uint24 public constant BASE_FEE = 3000; // 0.30%
     uint24 public constant PANIC_FEE = 50000; // 5.00% (Capture the Arb)
 
