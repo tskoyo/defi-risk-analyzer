@@ -19,21 +19,14 @@ import {Deployers} from "test/utils/Deployers.sol";
 contract BaseScript is Script, Deployers {
     address immutable deployerAddress;
 
-    /////////////////////////////////////
-    // --- Configure These ---
-    /////////////////////////////////////
-    // IERC20 internal constant token0 = IERC20(0x6e50537f918fF132E4147a8d464ddb37FC7DAb5E); // Base mainnet
-    // IERC20 internal constant token1 = IERC20(0x061C999459a6ABc44CF976a67C96ef126810Ad9D); // Base mainnet
+    struct NetworkConfig {
+        address poolManager;
+        address token0;
+        address token1;
+        address hookAddress;
+    }
 
-    IERC20 internal constant token0 = IERC20(0xa635C785bEB9B40041a87A0650F9af52A07A595f); // Base sepolia
-    IERC20 internal constant token1 = IERC20(0xEa4aF23bE6Cba93aA3d1862c9Ffb172c1cddC66e); // Base sepolia
-
-    // Deployed Hook contract on Base mainnet
-    // IHooks constant hookContract = IHooks(address(0x02ebe5dBEcC20177755Bd955268ADB95ff274080));
-
-    // Deployed Hook contract on Base sepolia
-    IHooks constant hookContract = IHooks(address(0x224CB5eD9A5e96816BafC0e99D96575bD2214080));
-    /////////////////////////////////////
+    NetworkConfig public activeNetworkConfig;
 
     Currency immutable currency0;
     Currency immutable currency1;
@@ -42,19 +35,52 @@ contract BaseScript is Script, Deployers {
         // Make sure artifacts are available, either deploy or configure.
         deployArtifacts();
 
+        if (block.chainid == 31337) {
+            activeNetworkConfig = NetworkConfig({
+                poolManager: address(poolManager),
+                token0: address(activeNetworkConfig.token0),
+                token1: address(activeNetworkConfig.token1),
+                hookAddress: address(activeNetworkConfig.hookAddress)
+            });
+        } else if (block.chainid == 84532) {
+            activeNetworkConfig = getBaseSepoliaConfig();
+        } else if (block.chainid == 8453) {
+            activeNetworkConfig = getBaseMainnetConfig();
+        } else {
+            revert("Unsupported network");
+        }
+
         deployerAddress = getDeployer();
 
         (currency0, currency1) = getCurrencies();
 
         vm.label(address(permit2), "Permit2");
-        vm.label(address(poolManager), "V4PoolManager");
+        vm.label(address(activeNetworkConfig.poolManager), "V4PoolManager");
         vm.label(address(positionManager), "V4PositionManager");
         vm.label(address(swapRouter), "V4SwapRouter");
 
-        vm.label(address(token0), "Currency0");
-        vm.label(address(token1), "Currency1");
+        vm.label(address(activeNetworkConfig.token0), "Currency0");
+        vm.label(address(activeNetworkConfig.token1), "Currency1");
 
-        vm.label(address(hookContract), "HookContract");
+        vm.label(address(activeNetworkConfig.hookAddress), "HookContract");
+    }
+
+    function getBaseMainnetConfig() public view returns (NetworkConfig memory) {
+        return NetworkConfig({
+            poolManager: 0x498581fF718922c3f8e6A244956aF099B2652b2b,
+            token0: 0x6e50537f918fF132E4147a8d464ddb37FC7DAb5E,
+            token1: 0x061C999459a6ABc44CF976a67C96ef126810Ad9D,
+            hookAddress: 0x02ebe5dBEcC20177755Bd955268ADB95ff274080
+        });
+    }
+
+    function getBaseSepoliaConfig() public view returns (NetworkConfig memory) {
+        return NetworkConfig({
+            poolManager: 0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408,
+            token0: 0xa635C785bEB9B40041a87A0650F9af52A07A595f,
+            token1: 0xEa4aF23bE6Cba93aA3d1862c9Ffb172c1cddC66e,
+            hookAddress: 0x224CB5eD9A5e96816BafC0e99D96575bD2214080
+        });
     }
 
     function _etch(address target, bytes memory bytecode) internal override {
@@ -65,13 +91,15 @@ contract BaseScript is Script, Deployers {
         }
     }
 
-    function getCurrencies() internal pure returns (Currency, Currency) {
-        require(address(token0) != address(token1));
+    function getCurrencies() internal view returns (Currency, Currency) {
+        require(address(activeNetworkConfig.token0) != address(activeNetworkConfig.token1));
 
-        if (token0 < token1) {
-            return (Currency.wrap(address(token0)), Currency.wrap(address(token1)));
+        if (activeNetworkConfig.token0 < activeNetworkConfig.token1) {
+            return
+                (Currency.wrap(address(activeNetworkConfig.token0)), Currency.wrap(address(activeNetworkConfig.token1)));
         } else {
-            return (Currency.wrap(address(token1)), Currency.wrap(address(token0)));
+            return
+                (Currency.wrap(address(activeNetworkConfig.token1)), Currency.wrap(address(activeNetworkConfig.token0)));
         }
     }
 
