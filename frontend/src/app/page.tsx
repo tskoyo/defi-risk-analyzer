@@ -19,6 +19,7 @@ import { usePoolState } from "@/hooks/usePoolState";
 import {
   BASE_FEE,
   SWAP_ROUTER_ABI,
+  DEMO_BATCHER_ABI,
   HOOK_ABI,
   ERC20_ABI,
   getAddrs,
@@ -36,6 +37,7 @@ import {
 } from "wagmi";
 
 type Direction = "0to1" | "1to0";
+const ZERO = "0x0000000000000000000000000000000000000000" as const;
 
 function toBigIntish(v: unknown): bigint | null {
   if (typeof v === "bigint") return v;
@@ -76,17 +78,48 @@ export default function Page() {
   const POOL_KEY = getPoolKey(chainId);
   const POOL_ID = getPoolId(chainId);
 
-  const hookEnabled =
-    addrs.hook !== "0x0000000000000000000000000000000000000000";
+  const hookEnabled = addrs.hook !== ZERO;
+  const batcherEnabled = addrs.demoBatcher !== ZERO;
 
   const tokenIn = direction === "0to1" ? addrs.token0 : addrs.token1;
 
+  // -------- Batch demo inputs (prime + whale + arb in same tx) --------
+  const [primeInStr, setPrimeInStr] = useState("0.1"); // < RETAIL_THRESHOLD
+  const [whaleInStr, setWhaleInStr] = useState("100"); // big move
+  const [arbInStr, setArbInStr] = useState("2"); // >= RETAIL_THRESHOLD
+
+  const primeIn = useMemo(
+    () => (primeInStr ? parseEther(primeInStr) : BigInt(0)),
+    [primeInStr],
+  );
+  const whaleIn = useMemo(
+    () => (whaleInStr ? parseEther(whaleInStr) : BigInt(0)),
+    [whaleInStr],
+  );
+  const arbIn = useMemo(() => (arbInStr ? parseEther(arbInStr) : BigInt(0)), [arbInStr]);
+
+  const totalIn = primeIn + whaleIn + arbIn;
+
+  // Allowance to batcher (NOT router), because batcher does transferFrom(user -> batcher)
+  const { data: allowanceToBatcher, refetch: refetchAllowanceToBatcher } =
+    useReadContract({
+      address: tokenIn,
+      abi: ERC20_ABI,
+      functionName: "allowance",
+      args: address && batcherEnabled ? [address, addrs.demoBatcher] : undefined,
+      query: { enabled: !!address && batcherEnabled, refetchInterval: 2000 },
+    });
+
+  const currentAllowanceToBatcher = allowanceToBatcher ?? BigInt(0);
+  const needsApproveBatcher = totalIn > BigInt(0) && currentAllowanceToBatcher < totalIn;
+
+  // -------- Normal router allowance (single swap flow) --------
   const { data: allowance, refetch: refetchAllowance } = useReadContract({
     address: tokenIn,
     abi: ERC20_ABI,
     functionName: "allowance",
     args: address ? [address, addrs.swapRouter] : undefined,
-    query: { refetchInterval: 2000 },
+    query: { enabled: !!address, refetchInterval: 2000 },
   });
 
   const {
@@ -99,7 +132,8 @@ export default function Page() {
     hash: approveHash,
   });
 
-  const { tick, liquidity, isLoading: isPoolLoading } = usePoolState();
+  const { tick, liquidity, isLoading: isPoolLoading, refetch: refetchPool } =
+    usePoolState();
 
   const {
     data: hash,
@@ -121,15 +155,15 @@ export default function Page() {
   const currentAllowance = allowance ?? BigInt(0);
   const needsApprove = isAmountValid && currentAllowance < amountBigInt;
 
-  // --- Hook reads (NEW hook model) ---
-
-  const { data: snapshot, isLoading: isSnapLoading } = useReadContract({
-    address: addrs.hook,
-    abi: HOOK_ABI,
-    functionName: "snapshots",
-    args: [POOL_ID],
-    query: { enabled: hookEnabled, refetchInterval: 2000 },
-  });
+  // -------- Hook reads --------
+  const { data: snapshot, isLoading: isSnapLoading, refetch: refetchSnapshot } =
+    useReadContract({
+      address: addrs.hook,
+      abi: HOOK_ABI,
+      functionName: "snapshots",
+      args: [POOL_ID],
+      query: { enabled: hookEnabled, refetchInterval: 2000 },
+    });
 
   const snapLastBlock = toBigIntish((snapshot as any)?.[0]);
   const snapStartTick = toNumberish((snapshot as any)?.[1]);
@@ -140,7 +174,6 @@ export default function Page() {
     functionName: "DIVERGENCE_LIMIT",
     query: { enabled: hookEnabled, refetchInterval: 5000 },
   });
-
   const divergenceLimit = toNumberish(divLimitRaw) ?? 60;
 
   const { data: retailThresholdRaw } = useReadContract({
@@ -150,32 +183,47 @@ export default function Page() {
     query: { enabled: hookEnabled, refetchInterval: 5000 },
   });
 
-  const retailThreshold =
-    toBigIntish(retailThresholdRaw) ?? BigInt(1) * BigInt(10) ** BigInt(18); // fallback 1 ether
+  const retailThreshold = toBigIntish(retailThresholdRaw) ?? BigInt(1) * BigInt(10) ** BigInt(18);
 
-  // --- UI state for fee preview ---
+  // -------- UI state for fee preview --------
   const [simRisk, setSimRisk] = useState<{ isPanic: boolean; fee: number }>({
-    isPanic: false, // folosit ca "high fee" badge
+    isPanic: false,
     fee: BASE_FEE,
   });
 
   useEffect(() => {
-    if (isConfirmed) {
-      toast.success("Swap Executed Successfully!", {
-        description: `Hash: ${hash?.slice(0, 10)}...`,
-      });
-      setAmount("");
-    }
-  }, [isConfirmed, hash]);
+    if (!isConfirmed) return;
+
+    toast.success("Tx confirmed", {
+      description: `Hash: ${hash?.slice(0, 10)}...`,
+    });
+
+    // refetch UI data after any tx
+    refetchAllowance();
+    refetchAllowanceToBatcher();
+    refetchPool();
+    refetchSnapshot();
+
+    // optional: clear amount only for normal swap
+    setAmount("");
+  }, [
+    isConfirmed,
+    hash,
+    refetchAllowance,
+    refetchAllowanceToBatcher,
+    refetchPool,
+    refetchSnapshot,
+  ]);
 
   useEffect(() => {
     if (!isApproveConfirming && approveHash) {
       toast.success("Token Approved!", {
-        description: "Now you can proceed with the swap.",
+        description: "Allowance updated.",
       });
       refetchAllowance();
+      refetchAllowanceToBatcher();
     }
-  }, [isApproveConfirming, approveHash, refetchAllowance]);
+  }, [isApproveConfirming, approveHash, refetchAllowance, refetchAllowanceToBatcher]);
 
   useEffect(() => {
     if (!writeError) return;
@@ -194,39 +242,30 @@ export default function Page() {
     setQuoteErr(null);
     setQuoteOut(null);
 
-    if (!publicClient) {
-      toast.error("Public client not ready");
-      return;
-    }
-    if (!address) {
-      toast.error("Connect wallet first");
-      return;
-    }
-    if (!isAmountValid) {
-      toast.error("Enter a valid amount");
-      return;
-    }
+    if (!publicClient) return toast.error("Public client not ready");
+    if (!address) return toast.error("Connect wallet first");
+    if (!isAmountValid) return toast.error("Enter a valid amount");
 
     let amountIn: bigint;
     try {
       amountIn = parseEther(amount);
     } catch {
-      toast.error("Invalid amount format");
-      return;
+      return toast.error("Invalid amount format");
     }
 
     // --- Fee preview (mirror hook) ---
     const isRetail = amountIn < retailThreshold;
 
     const currentTickNum = tick ?? 0;
-    const referenceTick = snapStartTick ?? currentTickNum; // best-effort
+    const referenceTick = snapStartTick ?? currentTickNum;
     const divergence = Math.abs(currentTickNum - referenceTick);
 
     let fee = BASE_FEE;
     let isHighFee = false;
 
+    // mirror your hook: fee = BASE_FEE + divergence * 100
     if (!isRetail && divergence > divergenceLimit) {
-      fee = divergence * 500; // same as hook: divergence * 500
+      fee = BASE_FEE + divergence * 100;
       if (fee > 500000) fee = 500000;
       if (fee < BASE_FEE) fee = BASE_FEE;
       isHighFee = true;
@@ -234,7 +273,6 @@ export default function Page() {
 
     setSimRisk({ isPanic: isHighFee, fee });
 
-    // Toast
     if (isRetail) {
       toast.success("Base Fee Preview", { description: "Retail-sized swap." });
     } else if (isHighFee) {
@@ -245,11 +283,9 @@ export default function Page() {
       toast.success("Base Fee Preview", { description: "Normal conditions." });
     }
 
-    // --- On-chain quote (optional) ---
+    // --- On-chain quote ---
     if (needsApprove) {
-      toast.info(
-        "Approve token first to get an on-chain quote (router will revert without allowance).",
-      );
+      toast.info("Approve token first to get an on-chain quote.");
       return;
     }
 
@@ -265,19 +301,10 @@ export default function Page() {
         address: addrs.swapRouter,
         abi: SWAP_ROUTER_ABI,
         functionName: "swapExactTokensForTokens",
-        args: [
-          amountIn,
-          BigInt(0),
-          zeroForOne,
-          POOL_KEY,
-          hookData,
-          address,
-          deadline,
-        ],
+        args: [amountIn, BigInt(0), zeroForOne, POOL_KEY, hookData, address, deadline],
       });
 
       setQuoteOut(sim.result as bigint);
-
       toast.success("On-chain quote ready", {
         description: `Estimated out: ${formatEther(sim.result as bigint)}`,
       });
@@ -290,7 +317,7 @@ export default function Page() {
     }
   };
 
-  const onApprove = () => {
+  const onApproveRouter = () => {
     writeApprove({
       address: tokenIn,
       abi: ERC20_ABI,
@@ -299,11 +326,18 @@ export default function Page() {
     });
   };
 
-  const onSubmit = () => {
-    if (!address || !amount) {
-      toast.error("Connect wallet & enter amount");
-      return;
-    }
+  const onApproveBatcher = () => {
+    if (!batcherEnabled) return toast.error("DemoBatcher not configured");
+    writeApprove({
+      address: tokenIn,
+      abi: ERC20_ABI,
+      functionName: "approve",
+      args: [addrs.demoBatcher, maxUint256],
+    });
+  };
+
+  const onSubmitSwap = () => {
+    if (!address || !amount) return toast.error("Connect wallet & enter amount");
 
     const amountIn = parseEther(amount);
     const zeroForOne = direction === "0to1";
@@ -318,8 +352,31 @@ export default function Page() {
     });
   };
 
+  // ✅ Whale demo: prime + whale + arb in same tx (through DemoBatcher)
+  const onRunWhaleDemo = () => {
+    if (!address) return toast.error("Connect wallet");
+    if (!batcherEnabled) return toast.error("DemoBatcher not configured");
+
+    if (primeIn <= BigInt(0) || whaleIn <= BigInt(0) || arbIn <= BigInt(0)) {
+      return toast.error("Set prime/whale/arb amounts");
+    }
+    if (needsApproveBatcher) {
+      return toast.info("Approve batcher first");
+    }
+
+    const zeroForOne = direction === "0to1";
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + 600);
+
+    writeContract({
+      address: addrs.demoBatcher,
+      abi: DEMO_BATCHER_ABI,
+      functionName: "primeWhaleArb",
+      args: [primeIn, whaleIn, arbIn, zeroForOne, POOL_KEY, deadline],
+    });
+  };
+
   const setDemoSafe = () => setAmount("0.1");
-  const setDemoRisk = () => setAmount("5"); // pentru hook-ul tău, demo “risk” e prin divergence, nu amount uriaș
+  const setDemoRisk = () => setAmount("5");
 
   const snapshotLabel = !hookEnabled
     ? "HOOK_ADDR=0x0"
@@ -335,6 +392,7 @@ export default function Page() {
   return (
     <div className="grid gap-6">
       <div className="grid gap-6 lg:grid-cols-2">
+        {/* LEFT: Swap Controls */}
         <Card>
           <CardHeader>
             <CardTitle className="flex justify-between items-center">
@@ -346,7 +404,7 @@ export default function Page() {
                   onClick={setDemoSafe}
                   className="h-6 text-xs cursor-pointer"
                 >
-                  Demo Safe
+                  Choose Safe
                 </Button>
                 <Button
                   variant="outline"
@@ -354,7 +412,7 @@ export default function Page() {
                   onClick={setDemoRisk}
                   className="h-6 text-xs text-red-500 border-red-200 cursor-pointer"
                 >
-                  Demo Risk
+                  Choose Risk
                 </Button>
               </div>
             </CardTitle>
@@ -391,7 +449,7 @@ export default function Page() {
               </RadioGroup>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
               <Button
                 type="button"
                 variant="secondary"
@@ -405,7 +463,7 @@ export default function Page() {
               {needsApprove ? (
                 <Button
                   type="button"
-                  onClick={onApprove}
+                  onClick={onApproveRouter}
                   disabled={isApprovePending || isApproveConfirming}
                   className="bg-amber-600 hover:bg-amber-700 text-white cursor-pointer"
                 >
@@ -413,20 +471,16 @@ export default function Page() {
                     ? "Approving..."
                     : isApproveConfirming
                       ? "Verifying..."
-                      : "Approve Token"}
+                      : "Approve (Router)"}
                 </Button>
               ) : (
                 <Button
                   type="button"
-                  onClick={onSubmit}
+                  onClick={onSubmitSwap}
                   className="cursor-pointer"
                   disabled={!isAmountValid || isPending || isConfirming}
                 >
-                  {isPending
-                    ? "Confirming..."
-                    : isConfirming
-                      ? "Processing..."
-                      : "Submit Swap"}
+                  {isPending ? "Confirming..." : isConfirming ? "Processing..." : "Submit Swap"}
                 </Button>
               )}
             </div>
@@ -439,6 +493,7 @@ export default function Page() {
           </CardContent>
         </Card>
 
+        {/* RIGHT: State + Fee Preview */}
         <div className="grid gap-6">
           <Card>
             <CardHeader>
@@ -476,16 +531,12 @@ export default function Page() {
 
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Current divergence</span>
-                <span className="font-mono">
-                  {currentDivergence === null ? "—" : currentDivergence}
-                </span>
+                <span className="font-mono">{currentDivergence === null ? "—" : currentDivergence}</span>
               </div>
 
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Liquidity</span>
-                <span className="font-mono">
-                  {liquidity !== null ? `${formatEther(liquidity)} L` : "—"}
-                </span>
+                <span className="font-mono">{liquidity !== null ? `${formatEther(liquidity)} L` : "—"}</span>
               </div>
 
               <div className="flex items-center justify-between">
@@ -500,18 +551,14 @@ export default function Page() {
               </div>
 
               {quoteErr && (
-                <div className="text-xs text-red-400 break-all">
-                  Quote error: {quoteErr}
-                </div>
+                <div className="text-xs text-red-400 break-all">Quote error: {quoteErr}</div>
               )}
             </CardContent>
           </Card>
 
           <Card
             className={
-              simRisk.isPanic
-                ? "border-red-500 bg-red-50/10"
-                : "border-green-500 bg-green-50/10"
+              simRisk.isPanic ? "border-red-500 bg-red-50/10" : "border-green-500 bg-green-50/10"
             }
           >
             <CardHeader>
@@ -528,21 +575,104 @@ export default function Page() {
             <CardContent className="grid gap-3 text-sm">
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">LP Fee</span>
-                <span className="font-bold text-lg">
-                  {(simRisk.fee / 10000).toFixed(2)}%
-                </span>
+                <span className="font-bold text-lg">{(simRisk.fee / 10000).toFixed(2)}%</span>
               </div>
 
               <Alert variant={simRisk.isPanic ? "destructive" : "default"}>
-                <AlertTitle>
-                  {simRisk.isPanic ? "High-fee protection" : "Normal conditions"}
-                </AlertTitle>
+                <AlertTitle>{simRisk.isPanic ? "High-fee protection" : "Normal conditions"}</AlertTitle>
                 <AlertDescription className="text-xs">
                   {simRisk.isPanic
                     ? "Fee scales with within-block tick divergence (LVR risk)."
                     : "Hook keeps the base fee."}
                 </AlertDescription>
               </Alert>
+            </CardContent>
+          </Card>
+
+          {/* ✅ Whale Demo Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                Whale Demo (same tx)
+                {!batcherEnabled && <Badge variant="outline">DemoBatcher missing</Badge>}
+              </CardTitle>
+              <CardDescription>
+                Runs <span className="font-mono">prime → whale → arb</span> via DemoBatcher so arb is in the same block.
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent className="grid gap-4 text-sm">
+              <div className="grid gap-2">
+                <Label htmlFor="primeIn">Prime (retail)</Label>
+                <Input
+                  id="primeIn"
+                  value={primeInStr}
+                  onChange={(e) => setPrimeInStr(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="0.1"
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="whaleIn">Whale</Label>
+                <Input
+                  id="whaleIn"
+                  value={whaleInStr}
+                  onChange={(e) => setWhaleInStr(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="100"
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="arbIn">Arb (= retail threshold)</Label>
+                <Input
+                  id="arbIn"
+                  value={arbInStr}
+                  onChange={(e) => setArbInStr(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="2"
+                />
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>Total in</span>
+                <span className="font-mono">{formatEther(totalIn)} tokenIn</span>
+              </div>
+
+              <div className="flex gap-2 flex-wrap">
+                <Button
+                  type="button"
+                  onClick={onApproveBatcher}
+                  disabled={!batcherEnabled || isApprovePending || isApproveConfirming}
+                  className="bg-amber-600 hover:bg-amber-700 text-white cursor-pointer"
+                >
+                  {isApprovePending
+                    ? "Approving..."
+                    : isApproveConfirming
+                      ? "Verifying..."
+                      : "Approve (Batcher)"}
+                </Button>
+
+                <Button
+                  type="button"
+                  onClick={onRunWhaleDemo}
+                  disabled={!batcherEnabled || isPending || isConfirming}
+                  className="cursor-pointer"
+                >
+                  {isPending ? "Confirming..." : isConfirming ? "Processing..." : "Run Whale Demo"}
+                </Button>
+              </div>
+
+              {batcherEnabled && (
+                <div className="text-xs text-muted-foreground">
+                  Allowance to batcher:{" "}
+                  <span className="font-mono">{formatEther(currentAllowanceToBatcher)} </span>
+                  {needsApproveBatcher && (
+                    <span className="text-amber-400"> (needs approve)</span>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>

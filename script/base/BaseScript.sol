@@ -73,7 +73,7 @@ contract BaseScript is Script, Deployers {
             poolManager: AddressConstants.getPoolManagerAddress(8453),
             token0: IERC20(0x6e50537f918fF132E4147a8d464ddb37FC7DAb5E),
             token1: IERC20(0x061C999459a6ABc44CF976a67C96ef126810Ad9D),
-            hookAddress: IHooks(0xDE5D3d9f35EEA3B82838C54943fB451Ab10710c0)
+            hookAddress: IHooks(0xA99ACC9DA5f0f2F0647D8259081BD754AC24d0c0)
         });
     }
 
@@ -82,7 +82,7 @@ contract BaseScript is Script, Deployers {
             poolManager: address(AddressConstants.getPoolManagerAddress(84532)),
             token0: IERC20(0xa635C785bEB9B40041a87A0650F9af52A07A595f),
             token1: IERC20(0xEa4aF23bE6Cba93aA3d1862c9Ffb172c1cddC66e),
-            hookAddress: IHooks(0x78Cec2ED44f45249c996796753dE312B185050c0)
+            hookAddress: IHooks(0x9bd274b97a234bE662430148dfdEB2B82fa410C0)
         });
     }
 

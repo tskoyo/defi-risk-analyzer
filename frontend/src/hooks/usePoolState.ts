@@ -32,8 +32,11 @@ export function usePoolState() {
   });
 
   const slot0 = result.data?.[0]?.result as
-    | readonly [bigint, bigint, unknown, unknown]
+    | readonly [bigint, bigint, bigint, bigint]
     | undefined;
+
+  const protocolFee = slot0 ? Number(slot0[2]) : null;
+  const lpFee = slot0 ? Number(slot0[3]) : null;
 
   const liquidity = result.data?.[1]?.result as bigint | undefined;
 
@@ -42,6 +45,8 @@ export function usePoolState() {
     isError: result.isError,
     tick: slot0 ? Number(slot0[1]) : null,
     sqrtPriceX96: slot0 ? slot0[0].toString() : null,
+    protocolFee,
+    lpFee,
     liquidity: liquidity ?? null,
     refetch: result.refetch,
   };

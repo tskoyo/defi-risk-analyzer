@@ -16,6 +16,7 @@ type Addrs = {
   token1: `0x${string}`;
   swapRouter: `0x${string}`;
   stateView: `0x${string}`;
+  demoBatcher: `0x${string}`;
 };
 
 const ADDRS_BY_CHAIN: Record<number, Addrs> = {
@@ -35,6 +36,8 @@ const ADDRS_BY_CHAIN: Record<number, Addrs> = {
       ZERO) as `0x${string}`,
     stateView: (process.env.NEXT_PUBLIC_STATE_VIEW_SEPOLIA_BASE_ADDR ??
       ZERO) as `0x${string}`,
+    demoBatcher: (process.env.NEXT_PUBLIC_DEMO_BATCHER ??
+      ZERO) as `0x${string}`,
   },
 
   [base.id]: {
@@ -51,6 +54,8 @@ const ADDRS_BY_CHAIN: Record<number, Addrs> = {
     swapRouter: (process.env.NEXT_PUBLIC_SWAP_ROUTER_BASE_ADDR ??
       ZERO) as `0x${string}`,
     stateView: (process.env.NEXT_PUBLIC_STATE_VIEW_BASE_ADDR ??
+      ZERO) as `0x${string}`,
+    demoBatcher: (process.env.NEXT_PUBLIC_DEMO_BATCHER ??
       ZERO) as `0x${string}`,
   },
 };
@@ -90,6 +95,10 @@ export function getPoolId(chainId: number) {
     ),
   );
 }
+
+export const DEMO_BATCHER_ABI = parseAbi([
+  "function primeWhaleArb(uint256 primeIn,uint256 whaleIn,uint256 arbIn,bool zeroForOne,(address currency0,address currency1,uint24 fee,int24 tickSpacing,address hooks) poolKey,uint256 deadline) external",
+]);
 
 export const SWAP_ROUTER_ABI = parseAbi([
   "function swapExactTokensForTokens(uint256 amountIn, uint256 amountOutMin, bool zeroForOne, (address currency0, address currency1, uint24 fee, int24 tickSpacing, address hooks) poolKey, bytes hookData, address receiver, uint256 deadline) external payable returns (uint256 amountOut)",
