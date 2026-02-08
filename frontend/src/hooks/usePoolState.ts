@@ -1,33 +1,38 @@
-import { useReadContracts } from "wagmi";
-import {
-  STATE_VIEW_ADDRESS,
-  STATE_VIEW_ABI,
-  POOL_ID,
-} from "@/config/contracts";
+import { useMemo } from "react";
+import { useReadContracts, useChainId } from "wagmi";
+import { STATE_VIEW_ABI, getAddrs, getPoolId } from "@/config/contracts";
+
+const ZERO = "0x0000000000000000000000000000000000000000" as const;
 
 export function usePoolState() {
+  const chainId = useChainId();
+  const addrs = useMemo(() => getAddrs(chainId), [chainId]);
+  const poolId = useMemo(() => getPoolId(chainId), [chainId]);
+
+  const enabled = addrs.stateView !== ZERO;
   const result = useReadContracts({
     contracts: [
       {
-        address: STATE_VIEW_ADDRESS,
+        address: addrs.stateView,
         abi: STATE_VIEW_ABI,
         functionName: "getSlot0",
-        args: [POOL_ID],
+        args: [poolId],
       },
       {
-        address: STATE_VIEW_ADDRESS,
+        address: addrs.stateView,
         abi: STATE_VIEW_ABI,
         functionName: "getLiquidity",
-        args: [POOL_ID],
+        args: [poolId],
       },
     ],
     query: {
+      enabled,
       refetchInterval: 3000,
     },
   });
 
   const slot0 = result.data?.[0]?.result as
-    | [bigint, number, number, number]
+    | readonly [bigint, bigint, unknown, unknown]
     | undefined;
 
   const liquidity = result.data?.[1]?.result as bigint | undefined;
