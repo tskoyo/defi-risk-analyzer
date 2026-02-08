@@ -19,9 +19,6 @@ function shortAddr(a?: string) {
 export function ConnectButton() {
     const { address, status, chainId, isConnected, isDisconnected } = useConnection();
 
-    const targetChainId = chains[0].id;
-    const wrongNetwork = isConnected && chainId !== targetChainId;
-
     const connectors = useConnectors();
     const connect = useConnect();
     const disconnect = useDisconnect();
@@ -29,11 +26,8 @@ export function ConnectButton() {
 
     const preferredConnector = React.useMemo(() => {
         return (
-            connectors.find(
-                (c) =>
-                    c.id === "metaMask" ||
-                    c.name.toLowerCase().includes("metamask")
-            ) ?? connectors[0]
+            connectors.find((c) => c.id === "metaMask" || c.name.toLowerCase().includes("metamask")) ??
+            connectors[0]
         );
     }, [connectors]);
 
@@ -47,12 +41,7 @@ export function ConnectButton() {
                     variant="secondary"
                     className="cursor-pointer"
                     disabled={disabled}
-                    onClick={() =>
-                        connect.mutate({
-                            connector: preferredConnector,
-                            chainId: targetChainId,
-                        })
-                    }
+                    onClick={() => connect.mutate({ connector: preferredConnector })}
                 >
                     {connect.isPending ? "Connecting…" : "Connect Wallet"}
                 </Button>
@@ -64,43 +53,29 @@ export function ConnectButton() {
         );
     }
 
-    if (wrongNetwork) {
-        return (
-            <div className="flex items-center gap-2">
-                <Button
-                    size="sm"
-                    variant="secondary"
-                    className="cursor-pointer"
-                    disabled={switchChain.isPending}
-                    onClick={() => switchChain.mutate({ chainId: targetChainId })}
-                >
-                    {switchChain.isPending ? "Switching…" : "Switch Network"}
-                </Button>
-
-                <Button
-                    size="sm"
-                    variant="ghost"
-                    className="cursor-pointer"
-                    onClick={() => disconnect.mutate()}
-                >
-                    Disconnect
-                </Button>
-            </div>
-        );
-    }
-
     return (
         <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+                {chains.map((c) => (
+                    <Button
+                        key={c.id}
+                        size="sm"
+                        variant={chainId === c.id ? "secondary" : "outline"}
+                        className="cursor-pointer"
+                        disabled={switchChain.isPending || chainId === c.id}
+                        onClick={() => switchChain.mutate({ chainId: c.id })}
+                        title={c.name}
+                    >
+                        {c.name}
+                    </Button>
+                ))}
+            </div>
+
             <Button size="sm" variant="secondary" disabled>
                 {shortAddr(address)}
             </Button>
 
-            <Button
-                size="sm"
-                variant="ghost"
-                className="cursor-pointer"
-                onClick={() => disconnect.mutate()}
-            >
+            <Button size="sm" variant="ghost" className="cursor-pointer" onClick={() => disconnect.mutate()}>
                 Disconnect
             </Button>
         </div>

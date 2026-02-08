@@ -1,4 +1,4 @@
-import { baseSepolia } from "viem/chains";
+import { base, baseSepolia } from "viem/chains";
 import { defineChain, type Chain } from "viem";
 
 export const anvil = defineChain({
@@ -11,15 +11,22 @@ export const anvil = defineChain({
   },
 });
 
-function getChainId(): number {
+function getSelectedChainId(): number {
   const raw = process.env.NEXT_PUBLIC_CHAIN_ID;
   const id = raw ? Number(raw) : baseSepolia.id;
   return Number.isFinite(id) ? id : baseSepolia.id;
 }
 
 function withEnvRpc(chain: Chain): Chain {
-  const rpc = process.env.NEXT_PUBLIC_RPC_URL;
+  const rpc =
+    chain.id === baseSepolia.id
+      ? process.env.NEXT_PUBLIC_RPC_SEPOLIA_BASE_URL
+      : chain.id === base.id
+        ? process.env.NEXT_PUBLIC_RPC_BASE_URL
+        : undefined;
+
   if (!rpc) return chain;
+
   return {
     ...chain,
     rpcUrls: {
@@ -30,10 +37,9 @@ function withEnvRpc(chain: Chain): Chain {
 }
 
 export function getChains() {
-  const chainId = getChainId();
+  const selected = getSelectedChainId();
 
-  if (chainId === anvil.id) return [anvil] as const;
-  if (chainId === baseSepolia.id) return [withEnvRpc(baseSepolia)] as const;
+  if (selected === anvil.id) return [anvil] as const;
 
-  throw new Error(`Unsupported NEXT_PUBLIC_CHAIN_ID=${chainId}`);
+  return [withEnvRpc(baseSepolia), withEnvRpc(base)] as const;
 }
