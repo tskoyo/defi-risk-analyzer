@@ -16,7 +16,14 @@ contract DeployHookScript is BaseScript {
     function run() external {
         uint160 flags = uint160(Hooks.AFTER_INITIALIZE_FLAG | Hooks.BEFORE_SWAP_FLAG | Hooks.AFTER_SWAP_FLAG);
 
-        bytes memory constructorArgs = abi.encode(activeNetworkConfig.poolManager);
+        address retailSigner;
+        try vm.envAddress("RETAIL_SIGNER") returns (address a) {
+            retailSigner = a;
+        } catch {
+            retailSigner = address(0);
+        }
+        
+        bytes memory constructorArgs = abi.encode(IPoolManager(activeNetworkConfig.poolManager),retailSigner);
 
         (address hookAddress, bytes32 salt) = HookMiner.find(
             0x4e59b44847b379578588920cA78FbF26c0B4956C,
@@ -28,7 +35,7 @@ contract DeployHookScript is BaseScript {
         // 4. Deploy
         vm.startBroadcast();
         LiquidityDepthRiskHook hook =
-            new LiquidityDepthRiskHook{salt: salt}(IPoolManager(activeNetworkConfig.poolManager));
+            new LiquidityDepthRiskHook{salt: salt}(IPoolManager(activeNetworkConfig.poolManager),retailSigner);
         require(address(hook) == hookAddress, "Address mismatch");
         vm.stopBroadcast();
 
