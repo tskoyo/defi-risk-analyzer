@@ -4,7 +4,7 @@ The Liquidity Depth Risk Pool project is an advanced automated market maker (AMM
 
 ## Description
 
-Standard liquidity pools are passive and often vulnerable to "toxic flow"—sophisticated traders who drain value from a pool when its liquidity is low or prices are volatile. This project introduces an Automated Risk Manager (the hook) that acts as a "surge pricing" algorithm. It calculates the "Risk Premium" of a trade based on how "shallow" the pool is and automatically increases swap fees to compensate LPs for the higher risk of being a counterparty to an informed trader.
+Standard liquidity pools are passive and often vulnerable to "toxic flow"—sophisticated traders who drain value from a pool when its liquidity is low or prices are volatile. This project introduces an Automated Risk Manager (the hook) that acts as a "surge pricing" algorithm. It calculates the "Risk Premium" of a trade based on the tick from the previous transaction and automatically increases swap fees to compensate LPs for the higher risk of being a counterparty to an informed trader.
 
 ## Features
 
