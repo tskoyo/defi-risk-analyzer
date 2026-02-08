@@ -238,6 +238,37 @@ export default function Page() {
     toast.error("Transaction Failed", { description: "Check console details." });
   }, [writeError]);
 
+  function computeFeePreview(params: {
+    amountIn: bigint;
+    tick: number | null;
+    snapLastBlock: bigint | null;
+    snapStartTick: number | null;
+    retailThreshold: bigint;
+    divergenceLimit: number;
+  }) {
+    const { amountIn, tick, snapLastBlock, snapStartTick, retailThreshold, divergenceLimit } = params;
+    if (tick === null) return { isHighFee: false, fee: BASE_FEE, divergence: null, isRetail: false };
+
+    const snapInitialized = !!snapLastBlock && snapLastBlock > BigInt(0) && snapStartTick !== null;
+    const referenceTick = snapInitialized ? snapStartTick! : tick;
+    const divergence = Math.abs(tick - referenceTick);
+
+    const isRetail = amountIn < retailThreshold;
+
+    let fee = BASE_FEE;
+    let isHighFee = false;
+
+    if (!isRetail && divergence > divergenceLimit) {
+      fee = BASE_FEE + divergence * 100;
+      if (fee > 500000) fee = 500000;
+      if (fee < BASE_FEE) fee = BASE_FEE;
+      isHighFee = true;
+    }
+
+    return { isHighFee, fee, divergence, isRetail };
+  }
+
+
   const runSimulation = async () => {
     setQuoteErr(null);
     setQuoteOut(null);
@@ -271,7 +302,16 @@ export default function Page() {
       isHighFee = true;
     }
 
-    setSimRisk({ isPanic: isHighFee, fee });
+    const p = computeFeePreview({
+      amountIn: whaleIn, // preview pentru pasul whale
+      tick,
+      snapLastBlock,
+      snapStartTick,
+      retailThreshold,
+      divergenceLimit,
+    });
+
+    setSimRisk({ isPanic: p.isHighFee, fee: p.fee });
 
     if (isRetail) {
       toast.success("Base Fee Preview", { description: "Retail-sized swap." });
