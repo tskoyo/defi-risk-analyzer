@@ -30,9 +30,33 @@ Standard liquidity pools are passive and often vulnerable to "toxic flow"—soph
             <td>Dynamic Fee Override</td>
             <td>Uses v4’s dynamic fee capability to bypass static tiers (like v3's 0.3%) in favor of a calculated risk-based rate.</td>
         </tr>
-        <tr>
-            <td>Self-Healing Incentive</td>
-            <td>High fees in low-liquidity states act as a "Risk Premium," signaling to LPs that it is a highly profitable time to deposit more assets and stabilize the pool.</td>
-        </tr>
     </tbody>
 </table>
+
+## Commands
+
+Here are the commands on how to interact with hook smart contract:
+
+### 1. Deploy hook
+```cli
+forge script script/01_CreatePoolAndAddLiquidity.s.sol \
+    --rpc-url [your-rpc-url] \
+    --private-key [your-private-key] \
+    --broadcast
+```
+
+### 2. Create pool and add liquidity
+```cli
+forge script script/02_AddLiquidity.s.sol \
+--rpc-url [your-rpc-url] \
+--private-key [private-key] \
+--broadcast
+```
+
+### 3. Add liquidity
+```cli
+forge script script/03_Swap.s.sol \
+  --rpc-url [your-rpc-url] \
+  --private-key [private-key] \
+  --broadcast \
+```
