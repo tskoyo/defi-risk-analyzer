@@ -4,13 +4,14 @@ pragma solidity ^0.8.26;
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 
 import {BaseScript} from "./base/BaseScript.sol";
+import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 
 contract SwapScript is BaseScript {
     function run() external {
         PoolKey memory poolKey = PoolKey({
             currency0: currency0,
             currency1: currency1,
-            fee: 3000,
+            fee: LPFeeLibrary.DYNAMIC_FEE_FLAG,
             tickSpacing: 60,
             hooks: activeNetworkConfig.hookAddress
         });
