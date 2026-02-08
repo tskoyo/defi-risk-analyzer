@@ -10,24 +10,23 @@ import {BeforeSwapDelta, BeforeSwapDeltaLibrary} from "@uniswap/v4-core/src/type
 import {LPFeeLibrary} from "@uniswap/v4-core/src/libraries/LPFeeLibrary.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {BalanceDelta} from "@uniswap/v4-core/src/types/BalanceDelta.sol";
+import {console} from "forge-std/console.sol";
 
 contract LiquidityDepthRiskHook is BaseHook {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
 
-    // --- Configuration ---
+    // --- Config ---
     uint24 public constant BASE_FEE = 3000; // 0.30%
-    int24 public constant TICK_DIVERGENCE_LIMIT = 10; // ~0.1% before scaling kicks in
+    uint256 public constant RETAIL_THRESHOLD = 1 ether; // Trades below this are "Retail"
+    int24 public constant DIVERGENCE_LIMIT = 60; // ~0.6% price move is "safe"
 
-    // threshold: Swaps smaller than 10 tokens (adj. decimals) are "Retail"
-    uint256 public constant RETAIL_THRESHOLD = 10 ether;
-
-    struct Observation {
-        uint32 timestamp;
-        int24 lastTick;
+    struct Snapshot {
+        uint256 lastBlock;
+        int24 startTick; // The price at the START of the block
     }
 
-    mapping(PoolId => Observation) public observations;
+    mapping(PoolId => Snapshot) public snapshots;
 
     constructor(IPoolManager _poolManager) BaseHook(_poolManager) {}
 
@@ -39,8 +38,8 @@ contract LiquidityDepthRiskHook is BaseHook {
             afterAddLiquidity: false,
             beforeRemoveLiquidity: false,
             afterRemoveLiquidity: false,
-            beforeSwap: true,
-            afterSwap: true,
+            beforeSwap: true, // Calculate Fee
+            afterSwap: true, // Update Oracle (Lazy)
             beforeDonate: false,
             afterDonate: false,
             beforeSwapReturnDelta: false,
@@ -52,7 +51,8 @@ contract LiquidityDepthRiskHook is BaseHook {
 
     function _afterInitialize(address, PoolKey calldata key, uint160, int24 tick) internal override returns (bytes4) {
         if (!LPFeeLibrary.isDynamicFee(key.fee)) revert("Pool must be dynamic fee");
-        observations[key.toId()] = Observation({timestamp: uint32(block.timestamp), lastTick: tick});
+        // Initialize snapshot
+        snapshots[key.toId()] = Snapshot({lastBlock: block.number, startTick: tick});
         return BaseHook.afterInitialize.selector;
     }
 
@@ -62,8 +62,16 @@ contract LiquidityDepthRiskHook is BaseHook {
         override
         returns (bytes4, BeforeSwapDelta, uint24)
     {
-        // 1. Check if retail
-        // amountSpecified is negative for exact-input (selling to pool)
+        PoolId poolId = key.toId();
+        Snapshot memory snap = snapshots[poolId];
+        (, int24 currentTick,,) = poolManager.getSlot0(poolId);
+
+        // 1. Identify the Reference Price
+        // If this is the first swap of the block, the reference IS the current price.
+        // If this is the 2nd+ swap, the reference is the price from the start of the block.
+        int24 referenceTick = (block.number > snap.lastBlock) ? currentTick : snap.startTick;
+
+        // 2. Check Retail Exemption
         uint256 absAmount =
             params.amountSpecified < 0 ? uint256(-params.amountSpecified) : uint256(params.amountSpecified);
         if (absAmount < RETAIL_THRESHOLD) {
@@ -74,28 +82,34 @@ contract LiquidityDepthRiskHook is BaseHook {
             );
         }
 
-        PoolId poolId = key.toId();
-        Observation memory last = observations[poolId];
-        (, int24 currentTick,,) = poolManager.getSlot0(poolId);
+        // 3. Calculate Divergence (Volatility)
+        int24 divergence = currentTick > referenceTick ? currentTick - referenceTick : referenceTick - currentTick;
 
-        int24 divergence = currentTick > last.lastTick ? currentTick - last.lastTick : last.lastTick - currentTick;
+        // 4. Determine Fee
+        uint24 fee = BASE_FEE;
 
-        uint24 feeToCharge = BASE_FEE;
-        if (divergence > TICK_DIVERGENCE_LIMIT) {
-            // SCALE THE FEE: 1 tick is roughly 1 basis point (0.01%)
-            // If price moves 15% (1500 ticks), we want a ~15% fee to stop arb profit.
-            feeToCharge = uint24(divergence * 10); // 1 tick = 10 pips (0.10%)
+        // If price has moved significantly within this block (LVR risk)
+        if (divergence > DIVERGENCE_LIMIT) {
+            // SCALAR FEE: 1 tick divergence adds 0.05% fee
+            // Example: 100 tick move (1%) -> 5% fee
+            fee = uint24(divergence * 500);
 
-            // Cap the fee at 90% to avoid total pool lockout
-            if (feeToCharge > 900000) feeToCharge = 900000;
+            console.log("Initial fee based on divergence: ", fee);
+
+            // Safety Cap: 50%
+            if (fee > 500000) fee = 500000;
+            // Floor: Don't go below Base Fee
+            if (fee < BASE_FEE) fee = BASE_FEE;
+
+            console.log("Divergence Detected: ", int256(divergence));
+            console.log("Sender is: ", msg.sender);
+            console.log("Fee is: ", fee);
         }
 
-        return
-            (
-                BaseHook.beforeSwap.selector,
-                BeforeSwapDeltaLibrary.ZERO_DELTA,
-                feeToCharge | LPFeeLibrary.OVERRIDE_FEE_FLAG
-            );
+        console.log("Fee is: ", fee);
+        console.log("Applying Dynamic Fee: ", fee / 10000, "%");
+
+        return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, fee | LPFeeLibrary.OVERRIDE_FEE_FLAG);
     }
 
     function _afterSwap(address, PoolKey calldata key, SwapParams calldata, BalanceDelta, bytes calldata)
@@ -104,8 +118,17 @@ contract LiquidityDepthRiskHook is BaseHook {
         returns (bytes4, int128)
     {
         PoolId poolId = key.toId();
-        (, int24 tick,,) = poolManager.getSlot0(poolId);
-        observations[poolId] = Observation({timestamp: uint32(block.timestamp), lastTick: tick});
+        Snapshot storage snap = snapshots[poolId];
+
+        // LAZY UPDATE: We only update the 'startTick' when we see a NEW block.
+        // This ensures that for the duration of a block, 'startTick' remains constant
+        // acting as a stable anchor to detect volatility.
+        if (block.number > snap.lastBlock) {
+            (, int24 tick,,) = poolManager.getSlot0(poolId);
+            snap.startTick = tick; // Reset anchor for the NEXT block
+            snap.lastBlock = block.number;
+        }
+
         return (BaseHook.afterSwap.selector, 0);
     }
 }
