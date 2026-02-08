@@ -14,13 +14,18 @@ export const SWAP_ROUTER_ADDRESS = (process.env.NEXT_PUBLIC_SWAP_ROUTER_ADDR ||
 
 export const LIQUIDITY_RISK_THRESHOLD = BigInt("100000000000000000000");
 export const TRADE_RISK_AMOUNT_THRESHOLD = BigInt("1000000000000000000000");
-export const BASE_FEE = 3000;
-export const PANIC_FEE = 50000;
+
+export const DYNAMIC_FEE_FLAG = 0x800000; // 8388608
+
+export const BASE_FEE = 3000; // 0.30% (pentru UI + simRisk)
+export const PANIC_FEE = 50000; // 5.00%  (pentru UI + simRisk)
+
+export const POOL_FEE = DYNAMIC_FEE_FLAG;
 
 export const POOL_KEY = {
   currency0: TOKEN0_ADDRESS,
   currency1: TOKEN1_ADDRESS,
-  fee: BASE_FEE,
+  fee: POOL_FEE,
   tickSpacing: 60,
   hooks: HOOK_ADDRESS,
 } as const;
@@ -48,7 +53,12 @@ export const SWAP_ROUTER_ABI = parseAbi([
 ]);
 
 export const HOOK_ABI = parseAbi([
-  "error DepthExhausted(uint256 ticksCrossed, uint256 limit)",
+  "error LvrBlocked(uint32 dt, int24 tickDiff, uint24 fee)",
+  "function observations(bytes32) view returns (uint32 timestamp, int24 lastTick)",
+  "function highFeeUntil(bytes32) view returns (uint32)",
+  "function RETAIL_THRESHOLD() view returns (uint256)",
+  "function BOT_AMOUNT_THRESHOLD() view returns (uint256)",
+  "function BASE_FEE() view returns (uint24)",
 ]);
 
 export const ERC20_ABI = parseAbi([

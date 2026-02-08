@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
 import {CurrencyLibrary, Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 import {Actions} from "@uniswap/v4-periphery/src/libraries/Actions.sol";
-
+import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 import {BaseScript} from "./BaseScript.sol";
 
 contract LiquidityHelpers is BaseScript {
@@ -52,5 +52,28 @@ contract LiquidityHelpers is BaseScript {
     function truncateTickSpacing(int24 tick, int24 tickSpacing) internal pure returns (int24) {
         /// forge-lint: disable-next-line(divide-before-multiply)
         return ((tick / tickSpacing) * tickSpacing);
+    }
+
+    function _alignToSpacingFloor(int24 tick, int24 spacing) internal pure returns (int24) {
+        int24 q = tick / spacing;
+        int24 r = tick % spacing;
+        // solidity: for negatives, / is toward zero; we want floor
+        if (tick < 0 && r != 0) q -= 1;
+        return q * spacing;
+    }
+
+    function _clampTick(int24 tick, int24 spacing) internal pure returns (int24) {
+        int24 minTick = _alignToSpacingFloor(TickMath.MIN_TICK, spacing);
+        int24 maxTick = _alignToSpacingFloor(TickMath.MAX_TICK, spacing);
+        if (tick < minTick) return minTick;
+        if (tick > maxTick) return maxTick;
+        return _alignToSpacingFloor(tick, spacing);
+    }
+
+    function _clampRange(int24 lower, int24 upper, int24 spacing) internal pure returns (int24, int24) {
+        lower = _clampTick(lower, spacing);
+        upper = _clampTick(upper, spacing);
+        require(lower < upper, "bad tick range");
+        return (lower, upper);
     }
 }
