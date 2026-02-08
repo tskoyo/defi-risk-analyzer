@@ -6,7 +6,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Web3Provider } from "@/components/web3-provider";
 
 export const metadata: Metadata = {
-  title: "Risk Hook Demo",
+  title: "Liquidity Depth Risk Pool",
   description: "Frontend for swap preflight + risk preview",
 };
 
