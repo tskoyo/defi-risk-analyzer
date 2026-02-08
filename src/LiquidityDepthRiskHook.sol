@@ -91,8 +91,9 @@ contract LiquidityDepthRiskHook is BaseHook {
         // If price has moved significantly within this block (LVR risk)
         if (divergence > DIVERGENCE_LIMIT) {
             // SCALAR FEE: 1 tick divergence adds 0.05% fee
-            // Example: 100 tick move (1%) -> 5% fee
-            fee = uint24(divergence * 500);
+            // 100 ticks -> 1% fee, 200 ticks -> 2% fee, etc.
+            // Example: If divergence is 100 ticks, fee = 3000 + (100 * 50) = 3500 (0.35%)
+            fee = uint24(BASE_FEE + uint24(divergence * 100)); // 100 represents 0.01% fee increase per tick of divergence
 
             console.log("Initial fee based on divergence: ", fee);
 
@@ -102,12 +103,13 @@ contract LiquidityDepthRiskHook is BaseHook {
             if (fee < BASE_FEE) fee = BASE_FEE;
 
             console.log("Divergence Detected: ", int256(divergence));
-            console.log("Sender is: ", msg.sender);
             console.log("Fee is: ", fee);
         }
 
         console.log("Fee is: ", fee);
-        console.log("Applying Dynamic Fee: ", fee / 10000, "%");
+        console.log("Applying dynamic fee. Divergence: ", int256(divergence));
+        console.log("Reference tick: ", referenceTick);
+        console.log("Current tick: ", currentTick);
 
         return (BaseHook.beforeSwap.selector, BeforeSwapDeltaLibrary.ZERO_DELTA, fee | LPFeeLibrary.OVERRIDE_FEE_FLAG);
     }

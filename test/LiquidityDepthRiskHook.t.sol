@@ -66,9 +66,6 @@ contract LiquidityDepthRiskHookTest is BaseTest {
     function test_panicFee_DetectsToxicFlow() public {
         // 1. Retail Swap (Small)
         // Should pay BASE_FEE (3000)
-        uint256 currency1BalanceBefore = currency1.balanceOf(address(this));
-        console.log("Currency1 balance before: ", currency1BalanceBefore);
-
         uint256 amountInRetail = 0.1 ether;
         vm.label(address(this), "Retail Trader");
         swapRouter.swapExactTokensForTokens({
@@ -82,8 +79,6 @@ contract LiquidityDepthRiskHookTest is BaseTest {
         });
 
         uint256 currency1BalanceAfter = currency1.balanceOf(address(this));
-        console.log("Currency1 balance after: ", currency1BalanceAfter);
-        console.log("Diff is: ", int256(currency1BalanceAfter) - int256(currency1BalanceBefore));
 
         // require(retailFee == 3000, "Retail swap should pay base fee");
 
